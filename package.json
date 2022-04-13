@@ -1,0 +1,31 @@
+{
+  "name": "kokkoro-plugin-rsshub",
+  "version": "0.0.1",
+  "description": "Everything is RSSible",
+  "main": "./lib/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kokkorojs/kokkoro-plugin-rsshub.git"
+  },
+  "keywords": [
+    "kokkoro"
+  ],
+  "author": "yuki",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/kokkorojs/kokkoro-plugin-rsshub/issues"
+  },
+  "homepage": "https://github.com/kokkorojs/kokkoro-plugin-rsshub#readme",
+  "devDependencies": {
+    "@types/node": "^17.0.23"
+  },
+  "dependencies": {
+    "rsshub": "^1.0.0-master.ae66123"
+  },
+  "files": [
+    "lib"
+  ]
+}
