@@ -11,6 +11,7 @@ interface RSS {
   title: string;
   link: string;
   description: string;
+  lastSendLink: string;
   item: RSSItem[];
 }
 
@@ -35,4 +36,12 @@ interface config {
    */
 }
 
-
+// 订阅配置
+interface Subscribe {
+  [group_id: number]: {
+    // 群名称
+    group_name: string;
+    // 群订阅列表
+    subscribe_list: string[];
+  }
+}
