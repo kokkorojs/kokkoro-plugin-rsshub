@@ -1,6 +1,6 @@
 import { readFile } from 'fs/promises';
 import { Plugin, Option, getBotList, logger, Bot } from 'kokkoro';
-import { getAllRSS, getRSS, addRSS, setRSS, hasRSS, initSubscribe, getSubscribe, writeSubscribe } from './service';
+import { getAllRSS, getRSS, addRSS, setRSS, hasRSS, initSubscribe, getSubscribe, writeSubscribe, getLastSendLink, getFirstRSS, hasSend } from './service';
 
 interface RSSHubOption extends Option {
 
@@ -15,10 +15,10 @@ export const plugin = new Plugin('rsshub', option).version(require('../package.j
 plugin
   .command('add <url>')
   .description('添加 RSS 订阅')
-  .sugar(/^添加\s?(?<url>https?:\/\/[^\s]*)$/)
+  .sugar(/^添加订阅\s?(?<url>https?:\/\/[^\s]*)$/)
   .action(function (url: string) {
     if (hasRSS(url)) {
-      this.event.reply('已存在这条 RSS 订阅，不要重复添加');
+      return this.event.reply('已存在这条 RSS 订阅，不要重复添加');
     }
     addRSS(url)
       .then(() => {
@@ -30,7 +30,7 @@ plugin
   });
 
 plugin
-  .command('subscribe', 'group')
+  .command('sub <url>', 'group')
   .description('订阅 RSS 并开启群聊监听')
   .sugar(/^订阅\s?(?<url>https?:\/\/[^\s]*)$/)
   .action(function (url: string) {
@@ -39,19 +39,29 @@ plugin
 
     getSubscribe(uin)
       .then(async subscribe => {
-        const { subscribe_list } = subscribe[group_id];
+        const { rss_list } = subscribe[group_id];
 
-        if (subscribe_list.includes(url)) {
+        if (rss_list.includes(url)) {
           return this.event.reply('当前群聊已存在该 RSS 信息，不要重复订阅');
         }
-        subscribe_list.push(url);
+        rss_list.push(url);
+        subscribe[group_id].group_name = group_name;
+
         try {
+          // 如果 RSS 订阅池不存在该条地址则写入
+          if (!hasRSS(url)) {
+            await addRSS(url);
+          }
           const rewrite = await writeSubscribe(uin);
+
           if (rewrite) {
-            this.bot.logger.mark('已更新 subscribe.yml');
+            this.event.reply('监听订阅成功');
+            this.bot.logger.mark(`已更新 rsshub/${uin}.yml`);
           }
         } catch (error) {
-          this.bot.logger.error(`更新写入 subscribe.yml 失败，${(error as Error).message}`);
+          const { message } = error as Error;
+
+          this.event.reply(`监听订阅失败，${message}`);
         }
       })
       .catch(error => {
@@ -65,26 +75,41 @@ plugin
     initSubscribe(bot);
   })
   // 定时发送
-  .schedule('0 0/5 * * * ?', async () => {
+  .schedule('30 0/5 * * * ?', async () => {
     const bot_list = getBotList();
+    const all_rss = getAllRSS();
+    const rss_urls = Object.keys(all_rss);
 
-    for (const [_, bot] of bot_list) {
-      const group_list = bot.getGroupList();
+    // 遍历 RSS 列表
+    for (let i = 0; i < rss_urls.length; i++) {
+      const url = rss_urls[i];
 
-      // 判断开启服务的群
-      group_list.forEach(async group => {
-        const { group_id } = group;
-        const { apply } = bot.getOption(group_id, 'rsshub') as RSSHubOption;
+      // 遍历 Bot 列表
+      for (const [uin, bot] of bot_list) {
+        const group_list = bot.getGroupList();
 
-        // if (apply) {
-        //   bot.sendGroupMsg(group_id, '');
-        // }
-      })
+        // 判断开启服务的群
+        for (const [_, group] of group_list) {
+          const { group_id } = group;
+          const { apply } = bot.getOption(group_id, 'rsshub') as RSSHubOption;
+
+          // 获取当前群聊监听的 RSS
+          const { rss_list } = (await getSubscribe(uin))[group_id];
+
+          if (apply && rss_list.includes(url) && !hasSend(url)) {
+            bot.sendGroupMsg(group_id, getFirstRSS(url));
+          }
+        }
+      }
+      // 更新 lastSendLink
+      all_rss[url].lastSendLink = all_rss[url].item[0].link;
+      // 写入 RSS
+      await setRSS(url, all_rss[url]);
     }
   })
   // 定时更新
   .schedule('0 0/10 * * * ?', async () => {
-    const rss_urls = getAllRSS();
+    const rss_urls = Object.keys(getAllRSS());
     const rss_urls_length = rss_urls.length;
 
     logger.mark('开始更新 RSS 数据');
@@ -94,7 +119,8 @@ plugin
 
       await getRSS(url)
         .then(async rss => {
-          rss.lastSendLink = '';
+          // 获取本地 RSS 最后发送的 link
+          rss.lastSendLink = getLastSendLink(url);
           await setRSS(url, rss);
           logger.info(`RSS: ${url} 更新成功`);
         })

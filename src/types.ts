@@ -42,6 +42,6 @@ interface Subscribe {
     // 群名称
     group_name: string;
     // 群订阅列表
-    subscribe_list: string[];
+    rss_list: string[];
   }
 }

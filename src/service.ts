@@ -1,5 +1,5 @@
 import RSSHub from 'rsshub';
-import { parse, stringify } from 'yaml';
+import YAML from 'yaml';
 import { Bot, deepMerge, logger } from 'kokkoro';
 import { join, resolve } from 'path';
 import { Database } from '@kokkoro/jsondb';
@@ -38,7 +38,7 @@ export async function addRSS(url: string): Promise<void> {
  * 获取全部 RSS 地址
  */
 export function getAllRSS() {
-  return Object.keys(db.data);
+  return db.data as { [k: string]: RSS };
 }
 
 /**
@@ -49,13 +49,36 @@ export function getAllRSS() {
  * @returns 
  */
 export function setRSS(url: string, rss: RSS): Promise<void> {
-  // TODO ⎛⎝≥⏝⏝≤⎛⎝ lastSendLink 处理
   db.set(url, rss, false);
   return db.write();
 }
 
 export function hasRSS(url: string) {
   return db.has(url, false);
+}
+
+function parseRSS(description: string) {
+  description = description
+    .replace(/<br>/g, '\n')
+  // (?<=src=\\).+?(?=referrerpolicy)
+}
+
+export function hasSend(url: string) {
+  const { item, lastSendLink } = db.get(url, false) as RSS;
+  return item[0].link === lastSendLink;
+}
+
+export function getFirstRSS(url: string) {
+  const { item, title } = db.get(url, false) as RSS;
+  const { description, pubDate, link } = item[0];
+  const message = `RSS 订阅更新:\n  ${title}\n正文:\n  ${description}\n时间:\n  ${pubDate}\n链接:\n  ${link}`;
+
+  return message;
+}
+
+export function getLastSendLink(url: string) {
+  const rss = db.get(url, false);
+  return rss.lastSendLink ?? '';
 }
 
 /**
@@ -72,9 +95,10 @@ export function initSubscribe(bot: Bot): Promise<void> {
   return new Promise((resolve, reject) => {
     readFile(subscribe_path, 'utf8')
       .then(base_subscribe => {
-        const local_subscribe = parse(base_subscribe);
+        const local_subscribe = YAML.parse(base_subscribe);
 
         deepMerge(subscribe, local_subscribe);
+        subscribe_list.set(uin, subscribe);
       })
       .catch(async (error: Error) => {
         const rewrite = !error.message.includes('ENOENT: no such file or directory');
@@ -88,10 +112,10 @@ export function initSubscribe(bot: Bot): Promise<void> {
           const { group_id, group_name } = group_info;
 
           subscribe[group_id] = {
-            group_name, subscribe_list: [],
+            group_name, rss_list: [],
           }
         }
-        await writeFile(subscribe_path, stringify(subscribe))
+        await writeFile(subscribe_path, YAML.stringify(subscribe))
           .then(() => {
             logger.mark(`创建了新的订阅文件: data/rsshub/${uin}.yml`);
           })
@@ -121,11 +145,11 @@ export function writeSubscribe(uin: number): Promise<boolean> {
     Promise.all([getSubscribe(uin), readFile(subscribe_path, 'utf8')])
       .then(async values => {
         const [subscribe, base_subscribe] = values;
-        const local_subscribe: Subscribe = parse(base_subscribe);
+        const local_subscribe: Subscribe = YAML.parse(base_subscribe);
 
         // 与本地 subscribe 作对比
         if (JSON.stringify(local_subscribe) !== JSON.stringify(subscribe)) {
-          await writeFile(subscribe_path, stringify(subscribe));
+          await writeFile(subscribe_path, YAML.stringify(subscribe));
           resolve(true);
         } else {
           resolve(false);
